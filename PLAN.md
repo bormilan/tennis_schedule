@@ -7,6 +7,7 @@ Build one small Python script that fetches upcoming ATP men's singles matches fr
 ## Scope
 
 - ATP Singles only.
+10. Write logs to stderr and to `atp_digest.log` by default; fail clearly if the log file cannot be opened.
 - One API request per run.
 - One recipient.
 - One HTML email with a plain-text fallback.
@@ -58,6 +59,7 @@ Build one small Python script that fetches upcoming ATP men's singles matches fr
 - Secrets are only read from environment variables and never logged.
 - A failed run is visible through a non-zero exit status.
 - A failed run produces an actionable error log.
+- A normal run writes the same log messages to stderr and the default log file.
 
 ## Fixed decisions
 

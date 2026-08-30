@@ -11,16 +11,16 @@ The script must make failures visible when it is run manually or from any automa
 - Log expected failures at `ERROR` level.
 - Log unexpected failures with `logger.exception(...)` so a traceback is available.
 - Always write logs to stderr.
-- If `LOG_FILE` is configured, also write the same messages to that file.
+- Also write the same messages to `LOG_FILE`, which defaults to `atp_digest.log`.
 - Use `LOG_LEVEL=INFO` by default; allow `DEBUG` when diagnosing a problem.
 - Keep the process exit status non-zero after any configuration, API, parsing, or email-delivery failure.
 
 ## Environment variables
 
 - `LOG_LEVEL=INFO`: `DEBUG`, `INFO`, `WARNING`, or `ERROR`.
-- `LOG_FILE=`: optional path for a persistent log file. Leave empty to use stderr only.
+- `LOG_FILE=atp_digest.log`: path for the persistent log file; it may be changed to an absolute path.
 
-The logger should fall back to stderr if the configured log file cannot be opened, and should report that fallback as a warning.
+If the log file cannot be opened, report the logging failure to stderr and exit non-zero.
 
 ## Events to log
 

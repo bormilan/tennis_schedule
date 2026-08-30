@@ -81,6 +81,7 @@ Use a fake SMTP client and verify:
 - Unexpected exceptions include a traceback.
 - Successful runs log the selected match count and successful delivery.
 - A writable `LOG_FILE` receives the same messages sent to stderr.
+- An unwritable `LOG_FILE` produces an error on stderr and a non-zero result.
 ### End-to-end orchestration
 
 Mock the API and SMTP together:
