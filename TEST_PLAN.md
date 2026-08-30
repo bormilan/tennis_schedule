@@ -73,6 +73,14 @@ Use a fake SMTP client and verify:
 - SMTP errors fail clearly and return a non-zero result.
 - The connection is closed cleanly.
 
+### Logging
+
+- Missing or invalid `EMAIL_TO` produces an `ERROR` log.
+- API failure produces an `ERROR` log without the API key.
+- SMTP failure produces an `ERROR` log without the SMTP password.
+- Unexpected exceptions include a traceback.
+- Successful runs log the selected match count and successful delivery.
+- A writable `LOG_FILE` receives the same messages sent to stderr.
 ### End-to-end orchestration
 
 Mock the API and SMTP together:
@@ -103,5 +111,3 @@ Use the standard library test runner:
 ```bash
 python -m unittest discover -s tests -v
 ```
-
-No tests are needed for cron or scheduling because scheduling is outside this project.

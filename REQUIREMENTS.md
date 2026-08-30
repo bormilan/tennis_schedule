@@ -29,9 +29,16 @@ Optional:
 - `API_TENNIS_BASE_URL=https://api.api-tennis.com/tennis/`: API base URL.
 - `API_TIMEOUT_SECONDS=30`: request timeout.
 - `SMTP_USE_TLS=true`: use STARTTLS on the SMTP connection.
+- `LOG_LEVEL=INFO`: logging level.
+- `LOG_FILE=`: optional persistent log file path; logs always go to stderr.
 
 The repository must contain `.env.example` with placeholders and must never contain a real `.env` file or secret.
 
+## Logging
+
+The script must configure Python standard-library logging. It must always write logs to stderr and optionally duplicate them to `LOG_FILE`. `INFO` logs should identify the run stages and selected match count. Configuration, API, parsing, and SMTP failures must be logged at `ERROR` level, and unexpected exceptions must include a traceback.
+
+The process must exit non-zero after any failure. Logs must never include API keys, SMTP passwords, full API responses, or full email bodies.
 ## API request
 
 The script must make one `GET` request to API-Tennis `get_fixtures` with:
