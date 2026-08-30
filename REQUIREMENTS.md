@@ -9,7 +9,6 @@ The project is a narrow utility, not a general tennis application. It fetches up
 - Python 3.11 or newer.
 - One executable script: `atp_digest.py`.
 - Dependencies: `requests` and `python-dotenv`.
-- Scheduling is external, normally one cron job.
 
 ## Environment variables
 
@@ -74,9 +73,8 @@ Use STARTTLS by default and close the SMTP connection cleanly. Do not log API ke
 
 ## Command behavior
 
-Running `python atp_digest.py` must fetch, render, and send the digest. There is no web server, database, interactive mode, CLI option set, odds, predictions, live polling, or built-in scheduler.
+Running `python atp_digest.py` must fetch, render, and send the digest. No additional application services or interactive modes are required.
 
-The README must show how to load `.env` and schedule the command.
 
 ## Minimal verification
 

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build one small scheduled Python script that fetches upcoming ATP men's singles matches from API-Tennis and emails a readable HTML digest to one recipient.
+Build one small Python script that fetches upcoming ATP men's singles matches from API-Tennis and emails a readable HTML digest to one recipient.
 
 ## Scope
 
@@ -10,7 +10,6 @@ Build one small scheduled Python script that fetches upcoming ATP men's singles 
 - One API request per run.
 - One recipient.
 - One HTML email with a plain-text fallback.
-- External scheduling through cron or an equivalent scheduler.
 
 ## Runtime behavior
 
@@ -28,7 +27,7 @@ Build one small scheduled Python script that fetches upcoming ATP men's singles 
 - `atp_digest.py`: configuration, API request, filtering, rendering, and email delivery in one small file.
 - `.env.example`: configuration template with placeholders only.
 - `requirements.txt`: only the small runtime dependencies.
-- No database, web server, frontend build, template system, API event discovery, live polling, odds, predictions, persistence, or built-in scheduler.
+- No database, web server, frontend build, template system, API event discovery, live polling, odds, predictions, persistence.
 
 ## Email design
 
@@ -45,7 +44,7 @@ Build one small scheduled Python script that fetches upcoming ATP men's singles 
 2. Parse the documented fixture fields and apply the ATP/future-match filter.
 3. Add small HTML and plain-text render functions using the standard library.
 4. Add standard-library SMTP delivery with STARTTLS.
-5. Add one short README section covering environment setup and cron usage.
+5. Add one short README section covering environment setup and running the script.
 6. Test one successful run, one empty result, and one failed API or SMTP connection.
 
 ## Acceptance criteria
