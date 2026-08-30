@@ -1,133 +1,99 @@
-# Requirements — Upcoming Men's Singles Email Digest
+# Requirements — Simple ATP Match Email Script
 
-## 1. Functional requirements
+## Purpose
 
-### FR-1: Configuration
+The project is a narrow utility, not a general tennis application. It fetches upcoming ATP men singles matches and sends one email digest to one configured recipient.
 
-The script MUST read secrets and runtime settings from environment variables. It MUST fail fast with a clear message when a required variable is missing or invalid.
+## Required runtime
 
-Required variables:
+- Python 3.11 or newer.
+- One executable script: `atp_digest.py`.
+- Dependencies: `requests` and `python-dotenv`.
+- Scheduling is external, normally one cron job.
 
-- `API_TENNIS_API_KEY`: API-Tennis account key.
-- `EMAIL_TO`: recipient email address. Put your own email address here in the local `.env` file.
-- `EMAIL_FROM`: sender address accepted by the SMTP account.
+## Environment variables
+
+Required:
+
+- `API_TENNIS_API_KEY`: API-Tennis API key.
+- `EMAIL_TO`: the recipient email address.
+- `EMAIL_FROM`: the verified sender email address.
 - `SMTP_HOST`: SMTP server hostname.
-- `SMTP_PORT`: SMTP server port, normally `587` for STARTTLS or `465` for implicit TLS.
-- `SMTP_USERNAME`: SMTP login username.
-- `SMTP_PASSWORD`: SMTP login password or provider app password.
+- `SMTP_PORT`: SMTP port.
+- `SMTP_USERNAME`: SMTP username.
+- `SMTP_PASSWORD`: SMTP password, app password, or SMTP key.
 
-Optional variables and defaults:
+Optional:
 
 - `TIMEZONE=UTC`: IANA timezone used for date boundaries and display.
-- `LOOKAHEAD_DAYS=7`: number of future calendar days to include after today; must be a non-negative integer.
-- `MEN_SINGLES_EVENT_TYPES=Atp Singles`: event type names to include. Matching is case-insensitive after trimming whitespace.
+- `LOOKAHEAD_DAYS=7`: number of calendar days after today to include.
 - `API_TENNIS_BASE_URL=https://api.api-tennis.com/tennis/`: API base URL.
-- `API_TIMEOUT_SECONDS=30`: per-request timeout.
-- `API_MAX_RETRIES=2`: bounded retry count for transient network/5xx failures.
-- `SMTP_USE_TLS=true`: use STARTTLS when `true`; do not combine with implicit TLS on port 465 without an explicit implementation decision.
-- `EMAIL_SUBJECT_PREFIX=Upcoming men's singles matches`: subject prefix.
+- `API_TIMEOUT_SECONDS=30`: request timeout.
+- `SMTP_USE_TLS=true`: use STARTTLS on the SMTP connection.
 
-The repository MUST include `.env.example` with placeholders only. A real `.env` file MUST be ignored by version control when a repository is added.
+The repository must contain `.env.example` with placeholders and must never contain a real `.env` file or secret.
 
-### FR-2: Discover and fetch fixtures
+## API request
 
-1. Call API-Tennis `get_events` using `API_TENNIS_API_KEY`.
-2. Resolve the configured event type names to `event_type_key` values returned by the API.
-3. Call `get_fixtures` for each resolved event type with:
-   - `date_start`: today in `TIMEZONE`.
-   - `date_stop`: today plus `LOOKAHEAD_DAYS` calendar days in `TIMEZONE`.
-4. Include the API timezone or an explicitly supported timezone parameter if the chosen API response supports it; otherwise parse the returned scheduled timestamp as documented by the provider and convert it safely.
-5. Do not request or expose API credentials in the generated page or email.
+The script must make one `GET` request to API-Tennis `get_fixtures` with:
 
-The source API reference is the API-Tennis [documentation](https://api-tennis.com/documentation). The documented fixtures method uses `get_fixtures`, `date_start`, `date_stop`, and optional `event_type_key`; the documented events method provides event type keys such as `Atp Singles`.
+- `method=get_fixtures`
+- `APIkey` from `API_TENNIS_API_KEY`
+- `date_start` equal to today in `TIMEZONE`
+- `date_stop` equal to today plus `LOOKAHEAD_DAYS`
+- `event_type_key=265` for `Atp Singles`
+- `timezone` from `TIMEZONE`
 
-### FR-3: Select upcoming men's singles matches
+The documented response fields to use are `event_key`, `event_date`, `event_time`, `event_first_player`, `event_second_player`, `event_status`, `event_type_type`, `tournament_name`, `tournament_round`, and `event_live`.
 
-The script MUST:
+The script must fail clearly when the API returns a non-success response, invalid JSON, or a response without a result list. It should use the configured timeout. No event discovery or retry framework is needed.
 
-- Include only records belonging to the configured men's singles event types.
-- Exclude doubles, women's, junior, exhibition, and other event types unless explicitly configured.
-- Exclude matches whose normalized status is completed, cancelled, postponed without a scheduled time, or live.
-- Include matches with a future scheduled time within the requested inclusive window.
-- Deduplicate by stable `match_key` when present; use a deterministic composite key only when the API omits it.
-- Sort ascending by scheduled time, then tournament name, round, and player names.
-- Tolerate optional/missing round, ranking, country, or status fields.
+## Match filtering
 
-### FR-4: Render the match page/digest
+Keep a match only when:
 
-The output MUST be a self-contained HTML email page with:
+- `event_type_type` is `Atp Singles`, case-insensitively.
+- It has two player names and a parseable date/time.
+- `event_live` is not `1` or `true`.
+- Its scheduled time is now or later and falls within the requested window.
 
-- A clear title and covered date range.
-- Generation timestamp and configured timezone.
-- Matches grouped by local date and tournament.
-- For each match: local start time, tournament, round when available, event type when useful, and both player names.
-- A responsive layout that remains usable on desktop and mobile email clients.
-- HTML escaping for every value originating from the API or environment.
-- A meaningful empty state when no matches are found.
+Deduplicate by `event_key` and sort by scheduled local time. Optional round, tournament, status, and key fields must not crash the script.
 
-The message MUST also include a plain-text alternative containing the same essential match information.
+## Email output
 
-### FR-5: Send the email
+Send one `multipart/alternative` message through authenticated SMTP:
 
-The script MUST:
+- HTML part: a self-contained, mobile-readable page grouped by local date.
+- Plain-text part: the same essential match information.
+- Subject: `Upcoming ATP matches — YYYY-MM-DD to YYYY-MM-DD`.
+- Each match: local start time, tournament, round when available, and both players.
+- Empty result: send `No upcoming ATP matches` instead of failing.
+- Escape all API-provided values before placing them in HTML.
 
-- Send a `multipart/alternative` email with the HTML and plain-text versions.
-- Use `EMAIL_TO`, `EMAIL_FROM`, and SMTP variables from the environment.
-- Use authenticated SMTP and STARTTLS by default.
-- Use a subject containing the date range.
-- Close the SMTP connection cleanly.
-- Return a non-zero process exit code if sending fails.
+Use STARTTLS by default and close the SMTP connection cleanly. Do not log API keys, SMTP passwords, or full email bodies.
 
-### FR-6: CLI and scheduling
+## Command behavior
 
-The script MUST support:
+Running `python atp_digest.py` must fetch, render, and send the digest. There is no web server, database, interactive mode, CLI option set, odds, predictions, live polling, or built-in scheduler.
 
-- Normal mode: fetch, render, and send.
-- `--dry-run`: fetch and render without sending; print or write the output for inspection.
-- `--version` or equivalent basic help output.
+The README must show how to load `.env` and schedule the command.
 
-Scheduling MUST be external to the script. Documentation MUST include a sample daily cron/systemd-style invocation and explain that the environment must be available to the scheduled process.
+## Minimal verification
 
-## 2. Non-functional requirements
+Before considering the script complete, verify:
 
-- Python 3.11+.
-- Use a small dependency footprint: HTTP client, `.env` loader, and standard-library email/SMTP and timezone support where practical.
-- All network requests MUST have a timeout.
-- Retries MUST be bounded and MUST NOT retry authentication or validation failures.
-- Logs MUST be useful for diagnosis but MUST NOT contain API keys, SMTP passwords, or full message bodies.
-- The script MUST be deterministic for the same API response, configuration, and current date/time.
-- Secrets MUST be supplied at runtime and MUST NOT be committed.
-- The code SHOULD use type hints and clear separation between fetching, normalization, rendering, and sending.
+- a normal response produces an email;
+- an empty response produces the empty-state email;
+- non-ATP records are excluded;
+- completed or live records are excluded;
+- HTML values are escaped;
+- missing required environment variables fail clearly;
+- API or SMTP failure exits non-zero.
 
-## 3. Test requirements
+## Out of scope
 
-Automated tests MUST cover:
-
-- Successful event discovery and fixture requests.
-- Multiple event types and correct men's-singles filtering.
-- Inclusive date-window boundaries and timezone conversion.
-- Exclusion of completed/live/non-men's-singles matches.
-- Deduplication and deterministic sorting.
-- HTML escaping and plain-text generation.
-- Empty fixture results.
-- API non-success responses, malformed payloads, timeout, and retry exhaustion.
-- Missing/invalid environment variables.
-- SMTP authentication or connection failure.
-- `--dry-run` not sending email.
-
-## 4. Initial dependency requirements
-
-The initial implementation may use:
-
-- `requests` for HTTPS API calls.
-- `python-dotenv` for local `.env` loading.
-
-Email, HTML escaping, command-line parsing, logging, and timezone handling should use the Python standard library (`email`, `smtplib`, `html`, `argparse`, `logging`, and `zoneinfo`) unless implementation testing shows a strong reason to add another dependency.
-
-## 5. Out of scope for version 1
-
-- Betting odds, predictions, player rankings, head-to-head history, or news.
-- Live score polling or WebSocket subscriptions.
-- A web server or permanently hosted public page.
-- User accounts, multiple recipients, unsubscribe management, or a database.
-- Automatic scheduler installation.
+- Challenger, ITF, WTA, junior, exhibition, or doubles matches.
+- API event discovery.
+- Odds, rankings, predictions, news, scores, or notifications beyond the single digest.
+- Multiple users or recipients.
+- Persistent storage or a hosted website.

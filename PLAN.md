@@ -1,76 +1,65 @@
-# Upcoming Men's Singles Email Digest — Implementation Plan
+# Simple ATP Match Email Script — Implementation Plan
 
 ## Goal
 
-Build a small scheduled Python script that retrieves upcoming men's singles tennis matches from API-Tennis, renders them as a readable HTML digest, and sends the digest by email.
+Build one small scheduled Python script that fetches upcoming ATP men's singles matches from API-Tennis and emails a readable HTML digest to one recipient.
 
-## Working assumptions
+## Scope
 
-- “Men's singles” means ATP Singles only (`Atp Singles`).
-- The default lookahead window is today through the next 7 calendar days, inclusive.
-- Match times are displayed in the configured `TIMEZONE` (default: `UTC`).
-- The script sends one digest per run; scheduling is handled externally by cron, systemd, GitHub Actions, or another scheduler.
-- No match odds, predictions, live polling, or persistence are required for the first version.
+- ATP Singles only.
+- One API request per run.
+- One recipient.
+- One HTML email with a plain-text fallback.
+- External scheduling through cron or an equivalent scheduler.
 
-## Proposed components
+## Runtime behavior
 
-1. **Configuration**
-   - Load settings from environment variables, optionally through a local `.env` file.
-   - Validate required API, recipient, sender, and SMTP settings before making requests.
+1. Load configuration from environment variables, optionally using the local `.env` file.
+2. Calculate today and the end date using `TIMEZONE` and `LOOKAHEAD_DAYS`.
+3. Call API-Tennis `get_fixtures` with the API key, date range, `event_type_key=265` for `Atp Singles`, and the configured timezone.
+4. Keep records that are ATP Singles, have both player names and a scheduled date/time, are not live, and are scheduled from now through the end of the requested window.
+5. Sort matches by local start time.
+6. Render a simple self-contained HTML email grouped by date.
+7. Send it through authenticated SMTP to `EMAIL_TO`.
+8. Exit with a non-zero status and a short error message if configuration, API, parsing, or email delivery fails.
 
-2. **API client**
-   - Call `get_events` to discover the account’s available event types.
-   - Select configured men's singles event types and obtain their `event_type_key` values.
-   - Call `get_fixtures` for the configured date window, once per selected event type.
-   - Treat non-success API responses, timeouts, malformed JSON, and unavailable event types as actionable errors.
+## Implementation shape
 
-3. **Match normalization and filtering**
-   - Normalize API records into an internal match model containing match key, tournament, round, scheduled time, player names, event type, and status.
-   - Keep only matches scheduled in the requested future window and exclude completed, cancelled, live, doubles, women's, and junior matches.
-   - Deduplicate records by `match_key` and sort by local scheduled time, tournament, and player names.
-   - Preserve missing values as an em dash rather than failing the entire digest.
+- `atp_digest.py`: configuration, API request, filtering, rendering, and email delivery in one small file.
+- `.env.example`: configuration template with placeholders only.
+- `requirements.txt`: only the small runtime dependencies.
+- No database, web server, frontend build, template system, API event discovery, live polling, odds, predictions, persistence, or built-in scheduler.
 
-4. **HTML rendering**
-   - Group matches by local calendar date, then by tournament.
-   - Render responsive email-safe HTML with a title, generated-at timestamp, match cards/table rows, tournament, round, local time, and both players.
-   - Escape all API-provided text before inserting it into HTML.
-   - Render an explicit empty-state message when no upcoming matches are returned.
-   - Produce a plain-text alternative for email clients that do not support HTML.
+## Email design
 
-5. **Email delivery**
-   - Send a multipart/alternative message through authenticated SMTP using STARTTLS by default.
-   - Use `EMAIL_TO` for the recipient and `EMAIL_FROM` for the sender.
-   - Set a deterministic subject containing the date range, for example: `Upcoming men's singles matches — 2026-08-30 to 2026-09-06`.
+- Subject: `Upcoming ATP matches — YYYY-MM-DD to YYYY-MM-DD`.
+- Title, covered date range, timezone, and generated timestamp.
+- Each match shows local time, tournament, round when available, and both players.
+- Matches are grouped by local date.
+- A clear `No upcoming ATP matches` empty state is sent when the API returns none.
+- All API text is HTML-escaped.
 
-6. **Operations and scheduling**
-   - Exit non-zero on configuration, API, rendering, or email failures.
-   - Log useful diagnostics without logging API keys, SMTP passwords, or full email contents.
-   - Add a command-line entry point with `--dry-run` to render and print/save the digest without sending it.
-   - Provide an example cron invocation and document the expected scheduler behavior.
+## Implementation steps
 
-## Implementation sequence
-
-1. Create the Python package/entry point and configuration validation.
-2. Implement the API-Tennis client with request timeout, bounded retries for transient failures, and response validation.
-3. Implement event-type selection, fixture normalization, future filtering, deduplication, and sorting.
-4. Add HTML and plain-text templates with escaping and empty-state behavior.
-5. Add SMTP delivery and dry-run mode.
-6. Add unit tests using saved representative API responses and a fake SMTP server/client.
-7. Add a README with setup, `.env` configuration, local execution, dry-run usage, and scheduling.
-8. Run formatting, static checks, and the test suite; then verify one end-to-end run with credentials supplied through the environment.
+1. Add `atp_digest.py` with environment validation and one `requests.get` call.
+2. Parse the documented fixture fields and apply the ATP/future-match filter.
+3. Add small HTML and plain-text render functions using the standard library.
+4. Add standard-library SMTP delivery with STARTTLS.
+5. Add one short README section covering environment setup and cron usage.
+6. Test one successful run, one empty result, and one failed API or SMTP connection.
 
 ## Acceptance criteria
 
-- A configured run fetches only upcoming men's singles fixtures for the requested date window.
-- The email includes every eligible match exactly once, with correct local date/time, tournament, round when available, and both player names.
-- The email remains readable on narrow screens and includes a plain-text fallback.
-- API failures, SMTP failures, invalid configuration, and malformed records produce a clear log message and non-zero exit status.
-- Secrets are never committed, printed, or embedded in generated HTML.
-- A no-matches run still sends a useful empty digest unless a future configuration option explicitly disables it.
-- Tests cover event filtering, date/time conversion, deduplication, HTML escaping, empty results, API errors, and SMTP errors.
+- A normal run fetches ATP Singles fixtures and sends one email to `EMAIL_TO`.
+- No Challenger, ITF, doubles, women's, junior, live, or completed matches appear.
+- The email contains the correct local time, tournament, round when available, and player names.
+- Missing optional fields do not crash the run.
+- Secrets are only read from environment variables and never logged.
+- A failed run is visible through a non-zero exit status.
 
-## Open decisions for implementation
+## Fixed decisions
 
-- The event type remains configurable for future expansion, but the required and default scope is ATP Singles only.
-- Whether the digest should be sent every day or at another cadence. This belongs to the external scheduler.
-- Which SMTP provider/account will send the message. The implementation will use standard SMTP settings so the provider can be chosen later.
+- Match scope is ATP Singles only.
+- API event type key is `265`, based on the API-Tennis documentation example for `Atp Singles`.
+- The default window is today plus the next 7 calendar days.
+- The default display timezone is UTC.
