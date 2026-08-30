@@ -7,6 +7,7 @@ Build one small Python script that fetches upcoming ATP men's singles matches fr
 ## Scope
 
 - ATP Singles only.
+10. Write logs to stderr and to `atp_digest.log` by default; fail clearly if the log file cannot be opened.
 - One API request per run.
 - One recipient.
 - One HTML email with a plain-text fallback.
@@ -21,12 +22,14 @@ Build one small Python script that fetches upcoming ATP men's singles matches fr
 6. Render a simple self-contained HTML email grouped by date.
 7. Send it through authenticated SMTP to `EMAIL_TO`.
 8. Exit with a non-zero status and a short error message if configuration, API, parsing, or email delivery fails.
+9. Log each major stage and every failure without logging secrets.
 
 ## Implementation shape
 
 - `atp_digest.py`: configuration, API request, filtering, rendering, and email delivery in one small file.
 - `.env.example`: configuration template with placeholders only.
 - `requirements.txt`: only the small runtime dependencies.
+- `LOGGING.md`: logging behavior, security rules, and logging tests.
 - No database, web server, frontend build, template system, API event discovery, live polling, odds, predictions, persistence.
 
 ## Email design
@@ -55,6 +58,8 @@ Build one small Python script that fetches upcoming ATP men's singles matches fr
 - Missing optional fields do not crash the run.
 - Secrets are only read from environment variables and never logged.
 - A failed run is visible through a non-zero exit status.
+- A failed run produces an actionable error log.
+- A normal run writes the same log messages to stderr and the default log file.
 
 ## Fixed decisions
 
