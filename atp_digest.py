@@ -7,11 +7,13 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, cast
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import requests
 from dotenv import load_dotenv
 
 
@@ -24,6 +26,10 @@ ALLOWED_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
 class ConfigError(ValueError):
     """Raised when configuration is missing or invalid."""
+
+
+class APIError(RuntimeError):
+    """Raised when the API request or response cannot be used."""
 
 
 @dataclass(frozen=True)
@@ -145,6 +151,88 @@ def load_config(
         log_level=log_level,
         log_file=log_file,
     )
+
+
+def fetch_matches(
+    config: Config,
+    *,
+    now: datetime | None = None,
+    logger: logging.Logger | None = None,
+) -> list[Mapping[str, object]]:
+    """Fetch the configured date window of ATP Singles fixtures.
+
+    The optional now value is injectable so callers and tests can make the date
+    window deterministic. The API response is returned unchanged for filtering
+    by a later stage.
+    """
+
+    logger = logger or logging.getLogger(LOGGER_NAME)
+    timezone = ZoneInfo(config.timezone)
+    current = datetime.now(timezone) if now is None else now
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone)
+    else:
+        current = current.astimezone(timezone)
+
+    date_start = current.date()
+    date_stop = date_start + timedelta(days=config.lookahead_days)
+    params = {
+        "method": "get_fixtures",
+        "APIkey": config.api_key,
+        "date_start": date_start.isoformat(),
+        "date_stop": date_stop.isoformat(),
+        "event_type_key": 265,
+        "timezone": config.timezone,
+    }
+    logger.info(
+        "requesting ATP fixtures from %s through %s (%s)",
+        params["date_start"],
+        params["date_stop"],
+        config.timezone,
+    )
+
+    try:
+        response = requests.get(
+            config.api_base_url,
+            params=params,
+            timeout=config.api_timeout_seconds,
+        )
+        response.raise_for_status()
+    except requests.Timeout as exc:
+        logger.error(
+            "API request failed: request timed out after %s seconds",
+            config.api_timeout_seconds,
+        )
+        raise APIError("API request timed out") from exc
+    except requests.RequestException as exc:
+        status_code = getattr(
+            getattr(exc, "response", None), "status_code", "unknown"
+        )
+        logger.error("API request failed: HTTP status %s", status_code)
+        raise APIError("API request failed") from exc
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        logger.error("API response malformed: invalid JSON")
+        raise APIError("API response was not valid JSON") from exc
+
+    if not isinstance(payload, Mapping):
+        logger.error("API response malformed: expected a JSON object")
+        raise APIError("API response was not a JSON object")
+
+    if payload.get("success") not in {1, True, "1", "true"}:
+        logger.error("API response unsuccessful")
+        raise APIError("API response was unsuccessful")
+
+    result = payload.get("result")
+    if not isinstance(result, list):
+        logger.error("API response malformed: result is not a list")
+        raise APIError("API response result was not a list")
+
+    fixtures = cast(list[Mapping[str, object]], result)
+    logger.info("received %s ATP fixture records", len(fixtures))
+    return fixtures
 
 
 def setup_logging(config: Config) -> logging.Logger:

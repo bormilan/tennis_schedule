@@ -1,11 +1,16 @@
 import io
 import logging
+from datetime import datetime, timezone
 import tempfile
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 
-from atp_digest import ConfigError, LOGGER_NAME, load_config, setup_logging
+from unittest.mock import Mock, patch
+
+import requests
+
+from atp_digest import APIError, ConfigError, LOGGER_NAME, fetch_matches, load_config, setup_logging
 
 
 class ConfigAndLoggingTests(unittest.TestCase):
@@ -96,6 +101,105 @@ class ConfigAndLoggingTests(unittest.TestCase):
         self.assertIn("logging setup failed", stderr.getvalue())
         self.assertNotIn(self.env["SMTP_PASSWORD"], stderr.getvalue())
         self.assertNotIn(self.env["API_TENNIS_API_KEY"], stderr.getvalue())
+
+
+    def test_fetch_uses_exact_request_parameters(self) -> None:
+        config = load_config(self.env, load_env_file=False)
+        fixtures = [{"event_key": "123", "event_status": "Not Started"}]
+        response = Mock()
+        response.json.return_value = {"success": 1, "result": fixtures}
+        current = datetime(2026, 9, 1, 12, tzinfo=timezone.utc)
+
+        with patch("atp_digest.requests.get", return_value=response) as get:
+            self.assertEqual(fetch_matches(config, now=current), fixtures)
+
+        get.assert_called_once_with(
+            config.api_base_url,
+            params={
+                "method": "get_fixtures",
+                "APIkey": self.env["API_TENNIS_API_KEY"],
+                "date_start": "2026-09-01",
+                "date_stop": "2026-09-08",
+                "event_type_key": 265,
+                "timezone": "UTC",
+            },
+            timeout=30,
+        )
+        response.raise_for_status.assert_called_once_with()
+
+    def test_fetch_accepts_empty_results(self) -> None:
+        config = load_config(self.env, load_env_file=False)
+        response = Mock()
+        response.json.return_value = {"success": 1, "result": []}
+
+        with patch("atp_digest.requests.get", return_value=response):
+            self.assertEqual(
+                fetch_matches(
+                    config,
+                    now=datetime(2026, 9, 1, 12, tzinfo=timezone.utc),
+                ),
+                [],
+            )
+
+    def test_fetch_rejects_http_failure_without_secret(self) -> None:
+        config = load_config(self.env, load_env_file=False)
+        response = Mock(status_code=503)
+        response.raise_for_status.side_effect = requests.HTTPError(response=response)
+
+        with patch("atp_digest.requests.get", return_value=response):
+            with self.assertLogs(LOGGER_NAME, level="ERROR") as captured:
+                with self.assertRaisesRegex(APIError, "API request failed"):
+                    fetch_matches(config)
+
+        output = "\n".join(captured.output)
+        self.assertIn("HTTP status 503", output)
+        self.assertNotIn(self.env["API_TENNIS_API_KEY"], output)
+
+    def test_fetch_rejects_timeout(self) -> None:
+        config = load_config(self.env, load_env_file=False)
+
+        with patch("atp_digest.requests.get", side_effect=requests.Timeout):
+            with self.assertLogs(LOGGER_NAME, level="ERROR") as captured:
+                with self.assertRaisesRegex(APIError, "timed out"):
+                    fetch_matches(config)
+
+        self.assertIn("timed out after 30 seconds", "\n".join(captured.output))
+
+    def test_fetch_rejects_invalid_json(self) -> None:
+        config = load_config(self.env, load_env_file=False)
+        response = Mock()
+        response.json.side_effect = ValueError
+
+        with patch("atp_digest.requests.get", return_value=response):
+            with self.assertRaisesRegex(APIError, "valid JSON"):
+                fetch_matches(config)
+
+    def test_fetch_rejects_unsuccessful_api_response(self) -> None:
+        config = load_config(self.env, load_env_file=False)
+        response = Mock()
+        response.json.return_value = {"success": 0, "result": []}
+
+        with patch("atp_digest.requests.get", return_value=response):
+            with self.assertRaisesRegex(APIError, "unsuccessful"):
+                fetch_matches(config)
+
+    def test_fetch_rejects_missing_result(self) -> None:
+        config = load_config(self.env, load_env_file=False)
+        response = Mock()
+        response.json.return_value = {"success": 1}
+
+        with patch("atp_digest.requests.get", return_value=response):
+            with self.assertRaisesRegex(APIError, "result was not a list"):
+                fetch_matches(config)
+
+    def test_fetch_rejects_non_list_result(self) -> None:
+        config = load_config(self.env, load_env_file=False)
+        response = Mock()
+        response.json.return_value = {"success": 1, "result": {}}
+
+        with patch("atp_digest.requests.get", return_value=response):
+            with self.assertRaisesRegex(APIError, "result was not a list"):
+                fetch_matches(config)
 
 
 if __name__ == "__main__":
